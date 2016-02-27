@@ -47,11 +47,11 @@ namespace P12218319 { namespace parallel {
 				}else {
 					task = TASK_LIST.back();
 					TASK_LIST.pop_back();
+					++WORKER_FUNCTIONS;
 				}
 			}
 
 			if(task) {
-				++WORKER_FUNCTIONS;
 				task->operator()();
 				delete task;
 				--WORKER_FUNCTIONS;
@@ -65,7 +65,10 @@ namespace P12218319 { namespace parallel {
 		bool P12218319_CALL TaskSchedule(Task& aTask) throw() {
 			if(! THREADS_LAUNCHED) {
 				THREADS_LAUNCHED = true;
-				std::atexit([](){EXIT_FLAG = true;});
+				std::atexit([](){
+					EXIT_FLAG = true;
+					for (uint32_t i = 0; i < WORKER_THREAD_COUNT; ++i) WORKER_THREADS[i].join();
+				});
 				for(uint32_t i = 0; i < WORKER_THREAD_COUNT; ++i) {
 					WORKER_THREADS[i] = std::thread(TaskWorker);
 				}
@@ -90,11 +93,11 @@ namespace P12218319 { namespace parallel {
 		{
 			std::lock_guard<std::mutex> lock(TASK_LIST_LOCK);
 			if(TASK_LIST.size() + WORKER_FUNCTIONS == 0) return count;
-			count = TASK_LIST.size();
 		}
 		{
 			std::unique_lock<std::mutex> lock(TASK_LIST_LOCK);
 			TASK_COMPLETED_CONDITION.wait(lock);
+			++count;
 		}
 		goto checkList;
 	}

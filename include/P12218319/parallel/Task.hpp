@@ -23,6 +23,7 @@ email : p12218319@myemail.dmu.ac.uk
 namespace P12218319 { namespace parallel{
 
 	namespace implementation {
+
 		class P12218319_EXPORT_API Task {
 		public:
 			virtual P12218319_CALL ~Task();
@@ -56,11 +57,54 @@ namespace P12218319 { namespace parallel{
 			return new LambdaTask(l);
 		}
 
+		template<class FUNCTION_TYPE, class... PARAMS>
+		class CaptureTaskLocal : public Task {
+		private:
+			//! \todo Use lambda directly
+			enum {MAX_TASK_SIZE = 128};
+			uint8_t mTask[MAX_TASK_SIZE];
+		public:
+			P12218319_CALL CaptureTaskLocal(const FUNCTION_TYPE aFunction, PARAMS... aParams) {
+				const auto l = [=]()->void {
+					aFunction(aParams...);
+				};
+
+				typedef decltype(l) LambdaType;
+
+				// Interface lambda with Task call
+				class LambdaTask : public Task {
+				private:
+					const LambdaType mFunction;
+				public:
+					P12218319_CALL LambdaTask(const LambdaType aFunction) :
+						mFunction(aFunction)
+					{}
+
+					// Inherited from Task
+					void P12218319_CALL operator()() const  throw() override {
+						mFunction();
+					}
+				};
+
+				static_assert(sizeof(LambdaTask) <= MAX_TASK_SIZE, "P12218319::parallel::implementation::CaptureTaskLocal : lambda size is too large");
+				new(mTask) LambdaTask(l);
+			}
+
+			~CaptureTaskLocal() {
+				//reinterpret_cast<Task*>(mTask)->~Task();
+			}
+
+			// Inherited from Task
+			void P12218319_CALL operator()() const  throw() override {
+				reinterpret_cast<const Task*>(mTask)->operator()();
+			}
+		};
+
 		P12218319_EXPORT_API bool P12218319_CALL TaskSchedule(Task&) throw();
 	}
 
 	template<class FUNCTION_TYPE, class... PARAMS>
-	bool P12218319_CALL TaskSchedule(const FUNCTION_TYPE aFunction, PARAMS... aParams) throw() {
+	inline bool P12218319_CALL TaskSchedule(const FUNCTION_TYPE aFunction, PARAMS... aParams) throw() {
 		return implementation::TaskSchedule(*implementation::CaptureTask<>(aFunction, aParams...));
 	}
 

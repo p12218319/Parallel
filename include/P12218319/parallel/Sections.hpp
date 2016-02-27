@@ -78,7 +78,7 @@ namespace P12218319 { namespace parallel{
 			const uint32_t depth = implementation::IncrementParallelDepth();
 
 			// Execute the sections in parallel
-			if(depth == 1 || IsNestedParallelismEnabled()) {
+			if(THREAD_COUNT > 1 && (depth == 1 || IsNestedParallelismEnabled())) {
 
 				// Function that runs on the thread to execute the section(s) for that thread
 				const auto threadFn = [](const uint32_t aSectionCount, implementation::Task** aSections)->void {
@@ -86,14 +86,19 @@ namespace P12218319 { namespace parallel{
 				};
 
 				// Create and launch threads
-				std::thread threads[THREAD_COUNT];
-				for(uint32_t i = 0; i < THREAD_COUNT; ++i) threads[i] = std::thread(threadFn, mSectionCount[i], mSections[i]);
+				enum {NEW_THREAD_COUNT = THREAD_COUNT - 1};
+				std::thread threads[NEW_THREAD_COUNT];
+				for(uint32_t i = 0; i < NEW_THREAD_COUNT; ++i) threads[i] = std::thread(threadFn, mSectionCount[i + 1], mSections[i + 1]);
+
+				// Execute the first section block on this thread
+				for(uint32_t i = 0; i < mSectionCount[0]; ++i) mSections[0][i]->operator()();
 
 				// Wait for threads and delete sections
-				for(uint32_t i = 0; i < THREAD_COUNT; ++i) {
+				for(uint32_t i; i < NEW_THREAD_COUNT; ++i) {
 					threads[i].join();
-					for(uint32_t j = 0; j < mSectionCount[i]; ++j) delete mSections[i][j];
+					for(uint32_t j = 0; j < mSectionCount[i + 1]; ++j) delete mSections[i + 1][j];
 				}
+				for(uint32_t i = 0; i < mSectionCount[0]; ++i) delete mSections[0][i];
 			// Execute the sections in sequence
 			}else {
 				for (uint32_t i = 0; i < THREAD_COUNT; ++i) {

@@ -27,10 +27,12 @@ namespace P12218319 { namespace parallel {
 	template<const uint32_t THREAD_COUNT = P12218319_DEFAULT_THREAD_COUNT, class FUNCTION_TYPE = void, class... PARAMS>
 	static bool P12218319_CALL Parallel(const FUNCTION_TYPE aFunction, PARAMS... aParams) throw() {
 		const uint32_t depth = implementation::IncrementParallelDepth();
-		if(depth == 1 || IsNestedParallelismEnabled()) {
-			std::thread threads[THREAD_COUNT];
-			for(uint32_t i = 0; i < THREAD_COUNT; ++i) threads[i] = std::thread(aFunction, aParams...);
-			for(uint32_t i = 0; i < THREAD_COUNT; ++i) threads[i].join();
+		if(THREAD_COUNT > 1 && (depth == 1 || IsNestedParallelismEnabled())) {
+			enum {NEW_THREAD_COUNT = THREAD_COUNT - 1};
+			std::thread threads[NEW_THREAD_COUNT];
+			for(uint32_t i = 0; i < NEW_THREAD_COUNT; ++i) threads[i] = std::thread(aFunction, aParams...);
+			aFunction(aParams...);
+			for(uint32_t i = 0; i < NEW_THREAD_COUNT; ++i) threads[i].join();
 		}else {
 			for(uint32_t i = 0; i < THREAD_COUNT; ++i) aFunction(aParams...);
 		}
