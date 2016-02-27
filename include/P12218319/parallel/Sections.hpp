@@ -21,8 +21,10 @@ email : p12218319@myemail.dmu.ac.uk
 #include <thread>
 #include "P12218319\core\Core.hpp"
 #include "Nesting.hpp"
+#include "Task.hpp"
 
 namespace P12218319 { namespace parallel{
+
 	/*!
 		\brief Execute any number of functions on a fixed number of threads.
 		\detail 
@@ -48,43 +50,51 @@ namespace P12218319 { namespace parallel{
 		\version 1.0
 		\data 26th Feburary 2016
 	*/
-	template<const uint32_t THREAD_COUNT = 4>
+	template<const uint32_t THREAD_COUNT = P12218319_DEFAULT_THREAD_COUNT>
 	class P12218319_EXPORT_API Sections {
 	public:
 		enum {
 			MAX_SECTIONS = 16	//!< The maximum number of sections that can be added.
 		};
 	private:
-		class Section {
-		public:
-			virtual P12218319_CALL ~Section() {}
-			virtual void P12218319_CALL operator()() const throw() = 0;
-		};	//!< Abstracts section calls behind a vtable.
-	private:
-		Section* mSections[THREAD_COUNT][MAX_SECTIONS];
+		implementation::Task* mSections[THREAD_COUNT][MAX_SECTIONS];
 		uint8_t mSectionCount[THREAD_COUNT];
 		uint8_t mCurrentThread;
 	public:
+		/*!
+			\brief Create an empty section group
+		*/
 		Sections() :
 			mCurrentThread(0)
 		{
 			for (uint32_t i = 0; i < THREAD_COUNT; ++i) mSectionCount[i] = 0;
 		}
 
+		/*!
+			\brief Sections are executed here.
+		*/
 		P12218319_CALL ~Sections() {
-			const uint32_t depth = ++implementation::THREAD_DEPTH;
-			if(depth == 1 || implementation::ALLOW_NESTED) {
+			// Increment the parallel depth
+			const uint32_t depth = implementation::IncrementParallelDepth();
 
-				const auto threadFn = [](const uint32_t aSectionCount, Section** aSections)->void {
+			// Execute the sections in parallel
+			if(depth == 1 || IsNestedParallelismEnabled()) {
+
+				// Function that runs on the thread to execute the section(s) for that thread
+				const auto threadFn = [](const uint32_t aSectionCount, implementation::Task** aSections)->void {
 					for(uint32_t i = 0; i < aSectionCount; ++i) aSections[i]->operator()();
 				};
 
+				// Create and launch threads
 				std::thread threads[THREAD_COUNT];
 				for(uint32_t i = 0; i < THREAD_COUNT; ++i) threads[i] = std::thread(threadFn, mSectionCount[i], mSections[i]);
+
+				// Wait for threads and delete sections
 				for(uint32_t i = 0; i < THREAD_COUNT; ++i) {
 					threads[i].join();
 					for(uint32_t j = 0; j < mSectionCount[i]; ++j) delete mSections[i][j];
 				}
+			// Execute the sections in sequence
 			}else {
 				for (uint32_t i = 0; i < THREAD_COUNT; ++i) {
 					for (uint32_t j = 0; j < mSectionCount[i]; ++j) {
@@ -93,34 +103,27 @@ namespace P12218319 { namespace parallel{
 					}
 				}
 			}
-			--implementation::THREAD_DEPTH;
+			implementation::DecrementParallelDepth();
 		}
 
+		/*!
+			\brief Add a section to be executed in parallel.
+			\tparam FUNCTION_TYPE The type of functor to execute.
+			\tparam PARAMS The parameter types to pass to the functor.
+			\param aFunction The functor that will be executed as a section.
+			\param aParams The params that will be passed to the functor.
+			\return Returns false if the section could not be added.
+		*/
 		template<class FUNCTION_TYPE, class... PARAMS>
 		bool P12218319_CALL AddSection(const FUNCTION_TYPE aFunction, PARAMS... aParams) throw() {
+			// Overflow thread index
 			if(mCurrentThread == THREAD_COUNT) mCurrentThread = 0;
+
+			// Check if a section can be added to the current thread
 			if(mSectionCount[mCurrentThread] == MAX_SECTIONS) return false;
 
-			const auto l = [=]()->void {
-				aFunction(aParams...);
-			};
-
-			typedef decltype(l) LambdaType;
-
-			class LambdaSection : public Section {
-			private:
-				const LambdaType mFunction;
-			public:
-				P12218319_CALL LambdaSection(const LambdaType aFunction) :
-					mFunction(aFunction)
-				{}
-
-				// Inherited from Section
-				void P12218319_CALL operator()() const  throw() override {
-					mFunction();
-				}
-			};
-			mSections[mCurrentThread][mSectionCount[mCurrentThread]++] = new LambdaSection(l);
+			// Add the section to the current thread and increment the thread index
+			mSections[mCurrentThread][mSectionCount[mCurrentThread]++] = implementation::CaptureTask<>(aFunction, aParams...);
 			++mCurrentThread;
 			return true;
 		}

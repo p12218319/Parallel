@@ -18,12 +18,21 @@ email : p12218319@myemail.dmu.ac.uk
 #ifndef P12218319_PARALLEL_NESTING_HPP
 #define P12218319_PARALLEL_NESTING_HPP
 
-#include <atomic>
+#include "P12218319\core\Core.hpp"
+
+#ifndef P12218319_DEFAULT_THREAD_COUNT
+	#define P12218319_DEFAULT_THREAD_COUNT 4
+#endif
 
 namespace P12218319 { namespace parallel {
 	namespace implementation {
-		static std::atomic_uint32_t THREAD_DEPTH = 0;
-		static std::atomic_bool ALLOW_NESTED = false;
+		P12218319_EXPORT_API uint32_t P12218319_CALL IncrementParallelDepth() throw();
+		P12218319_EXPORT_API uint32_t P12218319_CALL DecrementParallelDepth() throw();
+		P12218319_EXPORT_API uint32_t P12218319_CALL CheckParallelDepth() throw();
 	}
+
+	P12218319_EXPORT_API void P12218319_CALL EnabledNestedParallelism() throw();
+	P12218319_EXPORT_API void P12218319_CALL DisableNestedParallelism() throw();
+	P12218319_EXPORT_API bool P12218319_CALL IsNestedParallelismEnabled() throw();
 }}
 #endif
