@@ -91,7 +91,7 @@ namespace P12218319 { namespace parallel{
 			}
 
 			~CaptureTaskLocal() {
-				//reinterpret_cast<Task*>(mTask)->~Task();
+				reinterpret_cast<Task*>(mTask)->~Task();
 			}
 
 			// Inherited from Task
