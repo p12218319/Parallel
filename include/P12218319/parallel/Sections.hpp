@@ -18,120 +18,24 @@ email : p12218319@myemail.dmu.ac.uk
 #ifndef P12218319_PARALLEL_SECTIONS_HPP
 #define P12218319_PARALLEL_SECTIONS_HPP
 
-#include <thread>
 #include "P12218319\core\Core.hpp"
 #include "Nesting.hpp"
 #include "Task.hpp"
 
-namespace P12218319 { namespace parallel{
+namespace P12218319 { namespace Sections {
+	namespace implementation {
+		typedef P12218319::Tasks::implementation::Task Task;
+		P12218319_EXPORT_API bool P12218319_CALL Section(Task&) throw();
+	}
 
-	/*!
-		\brief Execute any number of functions on a fixed number of threads.
-		\detail 
-		Example
-		\code
-		{
-			// Create a 4 thread section group
-			Sections<4> group;
+	P12218319_EXPORT_API void P12218319_CALL Begin(const uint32_t aThreadCount = P12218319_DEFAULT_THREAD_COUNT) throw();
+	P12218319_EXPORT_API bool P12218319_CALL End() throw();
+	P12218319_EXPORT_API uint32_t P12218319_CALL GetThreadCount() throw();
+	P12218319_EXPORT_API uint32_t P12218319_CALL GetThread() throw();
 
-			// Add sections to the group
-			group.AddSection<>(MyLongFunction, 1, 2, 3);	// This section will execute on thread 0
-			group.AddSection<>(MyLongFunction, 4, 5, 6);	// This section will execute on thread 1
-			group.AddSection<>(MyOtherFunction);			// This section will execute on thread 2
-			group.AddSection<>(MyOtherFunction);			// This section will execute on thread 3
-			group.AddSection<>(MyLongFunction, 7, 8, 9);	// This section will execute on thread 0
-			group.AddSection<>(MyOtherFunction);			// This section will execute on thread 1
-
-			// Sections will execute here
-		}
-		\endcode
-		\tparam THREAD_COUNT The number of threads to spawn.
-		\author Adam Smith
-		\version 1.0
-		\data 26th Feburary 2016
-	*/
-	template<const uint32_t THREAD_COUNT = P12218319_DEFAULT_THREAD_COUNT>
-	class P12218319_EXPORT_API Sections {
-	public:
-		enum {
-			MAX_SECTIONS = 16	//!< The maximum number of sections that can be added.
-		};
-	private:
-		implementation::Task* mSections[THREAD_COUNT][MAX_SECTIONS];
-		uint8_t mSectionCount[THREAD_COUNT];
-		uint8_t mCurrentThread;
-	public:
-		/*!
-			\brief Create an empty section group
-		*/
-		Sections() :
-			mCurrentThread(0)
-		{
-			for (uint32_t i = 0; i < THREAD_COUNT; ++i) mSectionCount[i] = 0;
-		}
-
-		/*!
-			\brief Sections are executed here.
-		*/
-		P12218319_CALL ~Sections() {
-			// Increment the parallel depth
-			const uint32_t depth = implementation::IncrementParallelDepth();
-
-			// Execute the sections in parallel
-			if(THREAD_COUNT > 1 && (depth == 1 || IsNestedParallelismEnabled())) {
-
-				// Function that runs on the thread to execute the section(s) for that thread
-				const auto threadFn = [](const uint32_t aSectionCount, implementation::Task** aSections)->void {
-					for(uint32_t i = 0; i < aSectionCount; ++i) aSections[i]->operator()();
-				};
-
-				// Create and launch threads
-				enum {NEW_THREAD_COUNT = THREAD_COUNT - 1};
-				std::thread threads[NEW_THREAD_COUNT];
-				for(uint32_t i = 0; i < NEW_THREAD_COUNT; ++i) threads[i] = std::thread(threadFn, mSectionCount[i + 1], mSections[i + 1]);
-
-				// Execute the first section block on this thread
-				for(uint32_t i = 0; i < mSectionCount[0]; ++i) mSections[0][i]->operator()();
-
-				// Wait for threads and delete sections
-				for(uint32_t i; i < NEW_THREAD_COUNT; ++i) {
-					threads[i].join();
-					for(uint32_t j = 0; j < mSectionCount[i + 1]; ++j) delete mSections[i + 1][j];
-				}
-				for(uint32_t i = 0; i < mSectionCount[0]; ++i) delete mSections[0][i];
-			// Execute the sections in sequence
-			}else {
-				for (uint32_t i = 0; i < THREAD_COUNT; ++i) {
-					for (uint32_t j = 0; j < mSectionCount[i]; ++j) {
-						mSections[i][j]->operator()();
-						delete mSections[i][j];
-					}
-				}
-			}
-			implementation::DecrementParallelDepth();
-		}
-
-		/*!
-			\brief Add a section to be executed in parallel.
-			\tparam FUNCTION_TYPE The type of functor to execute.
-			\tparam PARAMS The parameter types to pass to the functor.
-			\param aFunction The functor that will be executed as a section.
-			\param aParams The params that will be passed to the functor.
-			\return Returns false if the section could not be added.
-		*/
-		template<class FUNCTION_TYPE, class... PARAMS>
-		bool P12218319_CALL AddSection(const FUNCTION_TYPE aFunction, PARAMS... aParams) throw() {
-			// Overflow thread index
-			if(mCurrentThread == THREAD_COUNT) mCurrentThread = 0;
-
-			// Check if a section can be added to the current thread
-			if(mSectionCount[mCurrentThread] == MAX_SECTIONS) return false;
-
-			// Add the section to the current thread and increment the thread index
-			mSections[mCurrentThread][mSectionCount[mCurrentThread]++] = implementation::CaptureTask<>(aFunction, aParams...);
-			++mCurrentThread;
-			return true;
-		}
-	};
+	template<class FUNCTION_TYPE, class... PARAMS>
+	inline P12218319_EXPORT_API bool P12218319_CALL Section(const FUNCTION_TYPE aFunction, PARAMS... aParams) throw() {
+		return implementation::Section(*P12218319::Tasks::implementation::CaptureTask<>(aFunction, aParams...));
+	}
 }}
 #endif

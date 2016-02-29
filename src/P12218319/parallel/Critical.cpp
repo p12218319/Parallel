@@ -20,7 +20,7 @@ email : p12218319@myemail.dmu.ac.uk
 #include <map>
 #include "P12218319\parallel\Critical.hpp"
 
-namespace P12218319 { namespace parallel {
+namespace P12218319 {
 
 	enum {
 		CRITICAL_COUNT = 1024
@@ -40,4 +40,4 @@ namespace P12218319 { namespace parallel {
 		}
 	}
 
-}}
+}

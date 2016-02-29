@@ -24,7 +24,7 @@ email : p12218319@myemail.dmu.ac.uk
 	#define P12218319_DEFAULT_THREAD_COUNT 4
 #endif
 
-namespace P12218319 { namespace parallel {
+namespace P12218319 {
 	namespace implementation {
 		P12218319_EXPORT_API uint32_t P12218319_CALL IncrementParallelDepth() throw();
 		P12218319_EXPORT_API uint32_t P12218319_CALL DecrementParallelDepth() throw();
@@ -34,5 +34,5 @@ namespace P12218319 { namespace parallel {
 	P12218319_EXPORT_API void P12218319_CALL EnabledNestedParallelism() throw();
 	P12218319_EXPORT_API void P12218319_CALL DisableNestedParallelism() throw();
 	P12218319_EXPORT_API bool P12218319_CALL IsNestedParallelismEnabled() throw();
-}}
+}
 #endif

@@ -19,10 +19,11 @@ email : p12218319@myemail.dmu.ac.uk
 #include <mutex>
 #include <vector>
 #include <atomic>
+#include <map>
 #include "P12218319\parallel\Nesting.hpp"
 #include "P12218319\parallel\Task.hpp"
 
-namespace P12218319 { namespace parallel {
+namespace P12218319 { namespace Tasks {
 	enum {
 		WORKER_THREAD_COUNT = P12218319_DEFAULT_THREAD_COUNT
 	};
@@ -52,6 +53,7 @@ namespace P12218319 { namespace parallel {
 	std::condition_variable TASK_ADDED_CONDITION;
 	std::condition_variable TASK_COMPLETED_CONDITION;
 	std::vector<TaskData> TASK_LIST;
+	thread_local std::vector<std::vector<TaskID>> TASK_GROUPS;
 	std::mutex TASK_LIST_LOCK;
 	std::thread WORKER_THREADS[WORKER_THREAD_COUNT];
 	TaskData WORKER_TASKS[WORKER_THREAD_COUNT];
@@ -85,9 +87,11 @@ namespace P12218319 { namespace parallel {
 		static bool THREADS_LAUNCHED = false;
 		if(! THREADS_LAUNCHED) {
 			THREADS_LAUNCHED = true;
+			P12218319::implementation::IncrementParallelDepth();
 			std::atexit([](){
 				EXIT_FLAG = true;
-				for (uint32_t i = 0; i < WORKER_THREAD_COUNT; ++i) WORKER_THREADS[i].join();
+				for(uint32_t i = 0; i < WORKER_THREAD_COUNT; ++i) WORKER_THREADS[i].join();
+				P12218319::implementation::DecrementParallelDepth();
 			});
 			for(uint32_t i = 0; i < WORKER_THREAD_COUNT; ++i) {
 				WORKER_THREADS[i] = std::thread(TaskWorker, i);
@@ -96,13 +100,15 @@ namespace P12218319 { namespace parallel {
 	}
 
 	namespace implementation {
-		TaskID P12218319_CALL TaskSchedule(Task& aTask) throw() {
+		TaskID P12218319_CALL Schedule(Task& aTask) throw() {
 			LaunchWorkers();
+			std::vector<TaskID>* group = TASK_GROUPS.empty() ? nullptr : &TASK_GROUPS.back();
 			TASK_LIST_LOCK.lock();
 			const TaskID id = ++ID_BASE;
 			TASK_LIST.push_back(TaskData(id, aTask, std::this_thread::get_id()));
 			TASK_LIST_LOCK.unlock();
-			TASK_COMPLETED_CONDITION.notify_one();
+			TASK_ADDED_CONDITION.notify_one();
+			if(group) group->push_back(id);
 			return id;
 		}
 
@@ -114,7 +120,7 @@ namespace P12218319 { namespace parallel {
 	}
 
 	template<class F>
-	void P12218319_CALL TaskWaitImplementation(const F aCheckList) throw() {
+	void P12218319_CALL WaitImplementation(const F aCheckList) throw() {
 		bool wait = true;
 		{
 			std::lock_guard<std::mutex> lock(TASK_LIST_LOCK);
@@ -129,37 +135,49 @@ namespace P12218319 { namespace parallel {
 		}
 	}
 	
-	void P12218319_CALL TaskWait(const TaskID* const aBegin, const TaskID* const aEnd) throw() {
-		TaskWaitImplementation<>([=]()->bool {
+	void P12218319_CALL Wait(const TaskID* const aBegin, const TaskID* const aEnd) throw() {
+		WaitImplementation<>([=]()->bool {
 			for(const TaskData& i : TASK_LIST) for(const TaskID* j = aBegin; j != aEnd; ++j)	if (i && i.ID == *j) return false;
 			for(const TaskData& i : WORKER_TASKS) for(const TaskID* j = aBegin; j != aEnd; ++j)	if (i && i.ID == *j) return false;
 			return true;
 		});
 	}
 
-	void P12218319_CALL TaskWait(const TaskID aID) throw() {
-		TaskWaitImplementation<>([=]()->bool {
+	void P12218319_CALL Wait(const TaskID aID) throw() {
+		WaitImplementation<>([=]()->bool {
 			for(const TaskData& i : TASK_LIST)		if(i && i.ID == aID) return false;
 			for(const TaskData& i : WORKER_TASKS)	if(i && i.ID == aID) return false;
 			return true;
 		});
 	}
 
-	void P12218319_CALL TaskWaitThread() throw() {
+	void P12218319_CALL WaitThread() throw() {
 		const std::thread::id id = std::this_thread::get_id();
-		TaskWaitImplementation<>([=]()->bool {
+		WaitImplementation<>([=]()->bool {
 			for(const TaskData& i : TASK_LIST)		if(i && i.SourceThread == id) return false;
 			for(const TaskData& i : WORKER_TASKS)	if(i && i.SourceThread == id) return false;
 			return true;
 		});
 	}
 
-	void P12218319_CALL TaskWaitGlobal() throw() {
-		TaskWaitImplementation<>([]()->bool{
+	void P12218319_CALL WaitGlobal() throw() {
+		WaitImplementation<>([]()->bool{
 			for(const TaskData& i : TASK_LIST)		if(i) return false;
 			for(const TaskData& i : WORKER_TASKS)	if(i) return false;
 			return true;
 		});
+	}
+
+	void P12218319_CALL BeginGroup() throw() {
+		TASK_GROUPS.push_back(std::vector<TaskID>());
+	}
+
+	bool P12218319_CALL EndGroup() throw() {
+		if(TASK_GROUPS.empty()) return false;
+		const std::vector<TaskID>& group = TASK_GROUPS.back();
+		Wait(&group[0], &group[0] + group.size());
+		TASK_GROUPS.pop_back();
+		return true;
 	}
 
 }}

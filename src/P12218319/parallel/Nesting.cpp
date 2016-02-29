@@ -19,7 +19,7 @@ email : p12218319@myemail.dmu.ac.uk
 #include <atomic>
 #include "P12218319\parallel\Nesting.hpp"
 
-namespace P12218319 { namespace parallel {
+namespace P12218319 {
 
 	std::atomic_uint32_t PARALLEL_DEPTH = 0;
 	std::atomic_bool NESTED_PARALLELISM = false;
@@ -51,4 +51,4 @@ namespace P12218319 { namespace parallel {
 		return NESTED_PARALLELISM;
 	}
 
-}}
+}

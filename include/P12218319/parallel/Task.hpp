@@ -20,7 +20,7 @@ email : p12218319@myemail.dmu.ac.uk
 
 #include "P12218319\core\Core.hpp"
 
-namespace P12218319 { namespace parallel {
+namespace P12218319 { namespace Tasks {
 
 	typedef uint64_t TaskID;
 
@@ -102,18 +102,20 @@ namespace P12218319 { namespace parallel {
 			}
 		};
 
-		P12218319_EXPORT_API TaskID P12218319_CALL TaskSchedule(Task&) throw();
+		P12218319_EXPORT_API TaskID P12218319_CALL Schedule(Task&) throw();
 	}
 
 	template<class FUNCTION_TYPE, class... PARAMS>
-	inline TaskID P12218319_CALL TaskSchedule(const FUNCTION_TYPE aFunction, PARAMS... aParams) throw() {
-		return implementation::TaskSchedule(*implementation::CaptureTask<>(aFunction, aParams...));
+	inline TaskID P12218319_CALL Schedule(const FUNCTION_TYPE aFunction, PARAMS... aParams) throw() {
+		return implementation::Schedule(*implementation::CaptureTask<>(aFunction, aParams...));
 	}
 
-	P12218319_EXPORT_API void P12218319_CALL TaskWait(const TaskID* const, const TaskID* const) throw();
-	P12218319_EXPORT_API void P12218319_CALL TaskWait(const TaskID) throw();
-	P12218319_EXPORT_API void P12218319_CALL TaskWaitThread() throw();
-	P12218319_EXPORT_API void P12218319_CALL TaskWaitGlobal() throw();
+	P12218319_EXPORT_API void P12218319_CALL BeginGroup() throw();
+	P12218319_EXPORT_API bool P12218319_CALL EndGroup() throw();
+	P12218319_EXPORT_API void P12218319_CALL Wait(const TaskID* const, const TaskID* const) throw();
+	P12218319_EXPORT_API void P12218319_CALL Wait(const TaskID) throw();
+	P12218319_EXPORT_API void P12218319_CALL WaitThread() throw();
+	P12218319_EXPORT_API void P12218319_CALL WaitGlobal() throw();
 
 
 }}

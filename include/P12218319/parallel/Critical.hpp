@@ -20,12 +20,13 @@ email : p12218319@myemail.dmu.ac.uk
 
 #include "Task.hpp"
 
-namespace P12218319 { namespace parallel {
+namespace P12218319 {
 
 	typedef uint64_t CriticalLabel;
 
 	namespace implementation {
-		P12218319_EXPORT_API void P12218319_CALL Critical(Task&) throw();
+		typedef P12218319::Tasks::implementation::Task Task;
+		P12218319_EXPORT_API void P12218319_CALL Critical(P12218319::Tasks::implementation::Task&) throw();
 		P12218319_EXPORT_API void P12218319_CALL Critical(const CriticalLabel, Task&) throw();
 	}
 
@@ -39,5 +40,5 @@ namespace P12218319 { namespace parallel {
 		implementation::Critical(aLabel, implementation::CaptureTaskLocal<FUNCTION_TYPE, PARAMS...>(aFunction, aParams...));
 	}
 
-}}
+}
 #endif
