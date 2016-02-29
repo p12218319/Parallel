@@ -25,7 +25,7 @@ namespace P12218319 {
 
 	P12218319_CALL Sections::Sections(const uint32_t aThreadCount) throw() :
 		mTasks(),
-		mWorkerThreads(new std::thread[aThreadCount - 1]),
+		mWorkerThreads(aThreadCount > 1 && (implementation::CheckParallelDepth() == 0 || IsNestedParallelismEnabled()) ? new std::thread[aThreadCount - 1] : nullptr),
 		mMasterThread(std::this_thread::get_id()),
 		mThreadCount(aThreadCount)
 	{}
@@ -33,11 +33,11 @@ namespace P12218319 {
 	P12218319_CALL Sections::~Sections() throw() {
 		typedef P12218319::Tasks::implementation::Task Task;
 
-		// Increment the parallel depth
-		const uint32_t depth = P12218319::implementation::IncrementParallelDepth();
-		
 		// Execute the sections in parallel
-		if(mThreadCount > 1 && (depth == 1 || IsNestedParallelismEnabled())) {
+		if(mWorkerThreads) {
+			// Increment the parallel depth
+			P12218319::implementation::IncrementParallelDepth();
+
 			// Distribute tasks
 			const uint32_t taskCount = mTasks.size();
 			const uint32_t maxDistributions = (taskCount / mThreadCount) + 1;
@@ -74,6 +74,8 @@ namespace P12218319 {
 			delete[] distributions;
 			delete[] distributionCounts;
 			for(Task* i : mTasks) delete i;
+			delete[] mWorkerThreads;
+			P12218319::implementation::DecrementParallelDepth();
 		// Execute the sections in sequence
 		}else {
 			for(Task* i : mTasks) {
@@ -81,11 +83,6 @@ namespace P12218319 {
 				delete i;
 			}
 		}
-		
-		
-		// Remove section
-		P12218319::implementation::DecrementParallelDepth();
-		delete[] mWorkerThreads;
 	}
 
 	uint32_t P12218319_CALL Sections::GetThreadCount() const throw() {
@@ -95,7 +92,9 @@ namespace P12218319 {
 	uint32_t P12218319_CALL Sections::GetThread() const throw() {
 		const std::thread::id id = std::this_thread::get_id();
 		if(id == mMasterThread) return 0;
-		for(uint32_t i = 0; i < mThreadCount - 1; ++i) if(id == mWorkerThreads[i].get_id()) return i + 1;
+		if(mWorkerThreads) {
+			for(uint32_t i = 0; i < mThreadCount - 1; ++i) if(id == mWorkerThreads[i].get_id()) return i + 1;
+		}
 		return UINT32_MAX;
 	}
 
