@@ -27,57 +27,83 @@ namespace P12218319 { namespace parallel {
 		WORKER_THREAD_COUNT = P12218319_DEFAULT_THREAD_COUNT
 	};
 
+	struct TaskData {
+		uint64_t ID;
+		implementation::Task* Task;
+		std::thread::id SourceThread;
+
+		TaskData()  throw() :
+			ID(0),
+			Task(nullptr),
+			SourceThread(std::this_thread::get_id())
+		{}
+
+		TaskData(const uint64_t aID, implementation::Task& aTask, const std::thread::id aSourceThread)  throw() :
+			ID(aID),
+			Task(&aTask),
+			SourceThread(aSourceThread)
+		{}
+
+		inline operator bool() const throw() {
+			return Task ? true : false;
+		}
+	};
+
 	std::condition_variable TASK_ADDED_CONDITION;
 	std::condition_variable TASK_COMPLETED_CONDITION;
-	std::vector<implementation::Task*> TASK_LIST;
+	std::vector<TaskData> TASK_LIST;
 	std::mutex TASK_LIST_LOCK;
 	std::thread WORKER_THREADS[WORKER_THREAD_COUNT];
-	std::atomic_uint32_t WORKER_FUNCTIONS = 0;
-	std::atomic_bool THREADS_LAUNCHED = false;
+	TaskData WORKER_TASKS[WORKER_THREAD_COUNT];
 	std::atomic_bool EXIT_FLAG = false;
+	uint64_t ID_BASE = 0;
 
-	void P12218319_CALL TaskWorker() {
-		implementation::Task* task = nullptr;
+	void P12218319_CALL TaskWorker(const uint32_t aID) {
+		TaskData& taskData = WORKER_TASKS[aID];
+		taskData.Task = nullptr;
 		while(! EXIT_FLAG) {
 			{
 				std::unique_lock<std::mutex> lock(TASK_LIST_LOCK);
 				TASK_ADDED_CONDITION.wait_for(lock, std::chrono::milliseconds(5));
-				if(TASK_LIST.empty()) {
-					task = nullptr;
-				}else {
-					task = TASK_LIST.back();
+				if(! TASK_LIST.empty()) {
+					taskData = TASK_LIST.back();
 					TASK_LIST.pop_back();
-					++WORKER_FUNCTIONS;
 				}
 			}
 
-			if(task) {
-				task->operator()();
-				delete task;
-				--WORKER_FUNCTIONS;
+			if(taskData) {
+				taskData.Task->operator()();
+				delete taskData.Task;
+				taskData.Task = nullptr;
 				TASK_COMPLETED_CONDITION.notify_all();
 			}
 
 		}
 	}
 
-	namespace implementation {
-		bool P12218319_CALL TaskSchedule(Task& aTask) throw() {
-			if(! THREADS_LAUNCHED) {
-				THREADS_LAUNCHED = true;
-				std::atexit([](){
-					EXIT_FLAG = true;
-					for (uint32_t i = 0; i < WORKER_THREAD_COUNT; ++i) WORKER_THREADS[i].join();
-				});
-				for(uint32_t i = 0; i < WORKER_THREAD_COUNT; ++i) {
-					WORKER_THREADS[i] = std::thread(TaskWorker);
-				}
+	void LaunchWorkers() throw() {
+		static bool THREADS_LAUNCHED = false;
+		if(! THREADS_LAUNCHED) {
+			THREADS_LAUNCHED = true;
+			std::atexit([](){
+				EXIT_FLAG = true;
+				for (uint32_t i = 0; i < WORKER_THREAD_COUNT; ++i) WORKER_THREADS[i].join();
+			});
+			for(uint32_t i = 0; i < WORKER_THREAD_COUNT; ++i) {
+				WORKER_THREADS[i] = std::thread(TaskWorker, i);
 			}
+		}
+	}
+
+	namespace implementation {
+		TaskID P12218319_CALL TaskSchedule(Task& aTask) throw() {
+			LaunchWorkers();
 			TASK_LIST_LOCK.lock();
-			TASK_LIST.push_back(&aTask);
+			const TaskID id = ++ID_BASE;
+			TASK_LIST.push_back(TaskData(id, aTask, std::this_thread::get_id()));
 			TASK_LIST_LOCK.unlock();
 			TASK_COMPLETED_CONDITION.notify_one();
-			return true;
+			return id;
 		}
 
 		// Task
@@ -87,19 +113,53 @@ namespace P12218319 { namespace parallel {
 		}
 	}
 
-	uint32_t P12218319_CALL TaskWait() throw() {
-		uint32_t count = 0;
-	checkList:
+	template<class F>
+	void P12218319_CALL TaskWaitImplementation(const F aCheckList) throw() {
+		bool wait = true;
 		{
 			std::lock_guard<std::mutex> lock(TASK_LIST_LOCK);
-			if(TASK_LIST.size() + WORKER_FUNCTIONS == 0) return count;
+			wait = ! aCheckList();
 		}
-		{
-			std::unique_lock<std::mutex> lock(TASK_LIST_LOCK);
-			TASK_COMPLETED_CONDITION.wait(lock);
-			++count;
+		while(wait) {
+			{
+				std::unique_lock<std::mutex> lock(TASK_LIST_LOCK);
+				TASK_COMPLETED_CONDITION.wait(lock);
+				wait = ! aCheckList();
+			}
 		}
-		goto checkList;
+	}
+	
+	void P12218319_CALL TaskWait(const TaskID* const aBegin, const TaskID* const aEnd) throw() {
+		TaskWaitImplementation<>([=]()->bool {
+			for(const TaskData& i : TASK_LIST) for(const TaskID* j = aBegin; j != aEnd; ++j)	if (i && i.ID == *j) return false;
+			for(const TaskData& i : WORKER_TASKS) for(const TaskID* j = aBegin; j != aEnd; ++j)	if (i && i.ID == *j) return false;
+			return true;
+		});
+	}
+
+	void P12218319_CALL TaskWait(const TaskID aID) throw() {
+		TaskWaitImplementation<>([=]()->bool {
+			for(const TaskData& i : TASK_LIST)		if(i && i.ID == aID) return false;
+			for(const TaskData& i : WORKER_TASKS)	if(i && i.ID == aID) return false;
+			return true;
+		});
+	}
+
+	void P12218319_CALL TaskWaitThread() throw() {
+		const std::thread::id id = std::this_thread::get_id();
+		TaskWaitImplementation<>([=]()->bool {
+			for(const TaskData& i : TASK_LIST)		if(i && i.SourceThread == id) return false;
+			for(const TaskData& i : WORKER_TASKS)	if(i && i.SourceThread == id) return false;
+			return true;
+		});
+	}
+
+	void P12218319_CALL TaskWaitGlobal() throw() {
+		TaskWaitImplementation<>([]()->bool{
+			for(const TaskData& i : TASK_LIST)		if(i) return false;
+			for(const TaskData& i : WORKER_TASKS)	if(i) return false;
+			return true;
+		});
 	}
 
 }}
