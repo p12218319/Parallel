@@ -18,24 +18,38 @@ email : p12218319@myemail.dmu.ac.uk
 #ifndef P12218319_PARALLEL_SECTIONS_HPP
 #define P12218319_PARALLEL_SECTIONS_HPP
 
+
+#include <vector>
+#include <thread>
 #include "P12218319\core\Core.hpp"
-#include "Nesting.hpp"
 #include "Task.hpp"
 
-namespace P12218319 { namespace Sections {
-	namespace implementation {
-		typedef P12218319::Tasks::implementation::Task Task;
-		P12218319_EXPORT_API bool P12218319_CALL Section(Task&) throw();
-	}
+namespace P12218319 {
 
-	P12218319_EXPORT_API void P12218319_CALL Begin(const uint32_t aThreadCount = P12218319_DEFAULT_THREAD_COUNT) throw();
-	P12218319_EXPORT_API bool P12218319_CALL End() throw();
-	P12218319_EXPORT_API uint32_t P12218319_CALL GetThreadCount() throw();
-	P12218319_EXPORT_API uint32_t P12218319_CALL GetThread() throw();
+	class P12218319_EXPORT_API Sections {
+	private:
+		std::vector<P12218319::Tasks::implementation::Task*> mTasks;
+		std::thread* const mWorkerThreads;
+		const std::thread::id mMasterThread;
+		const uint32_t mThreadCount;
+	private:
+		P12218319_CALL Sections(Sections&&) throw() = delete;
+		P12218319_CALL Sections(const Sections&) throw() = delete;
+		Sections& P12218319_CALL operator=(Sections&&) throw() = delete;
+		Sections& P12218319_CALL operator=(const Sections&) throw() = delete;
 
-	template<class FUNCTION_TYPE, class... PARAMS>
-	inline P12218319_EXPORT_API bool P12218319_CALL Section(const FUNCTION_TYPE aFunction, PARAMS... aParams) throw() {
-		return implementation::Section(*P12218319::Tasks::implementation::CaptureTask<>(aFunction, aParams...));
-	}
-}}
+		bool P12218319_CALL Section_(P12218319::Tasks::implementation::Task&) throw();
+	public:
+		P12218319_CALL Sections(const uint32_t) throw();
+		P12218319_CALL ~Sections() throw();
+
+		uint32_t P12218319_CALL GetThreadCount() const throw();
+		uint32_t P12218319_CALL GetThread() const throw();
+
+		template<class FUNCTION_TYPE, class... PARAMS>
+		inline bool P12218319_CALL Section(const FUNCTION_TYPE aFunction, PARAMS... aParams) throw() {
+			return Section_(*P12218319::Tasks::implementation::CaptureTask<>(aFunction, aParams...));
+		}
+	};
+}
 #endif
